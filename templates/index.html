@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ tty</title>
+<!-- Version set dynamically from /api/info -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #0a0e14;
+  --bg-panel: #111820;
+  --bg-input: #0d1219;
+  --bg-hover: #1a2233;
+  --border: #1e2a3a;
+  --border-focus: #3d8ef0;
+  --text-primary: #d4dce8;
+  --text-secondary: #6b7f99;
+  --text-muted: #3e4f66;
+  --accent: #3d8ef0;
+  --accent-glow: rgba(61, 142, 240, 0.15);
+  --green: #34d399;
+  --green-dim: rgba(52, 211, 153, 0.12);
+  --red: #f87171;
+  --red-dim: rgba(248, 113, 113, 0.12);
+  --amber: #fbbf24;
+  --amber-dim: rgba(251, 191, 36, 0.12);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'DM Sans',sans-serif; background:var(--bg-deep); color:var(--text-primary); min-height:100vh; overflow:hidden; }
+.app { display:grid; grid-template-rows:auto 1fr; height:100vh; }
+
+/* Header */
+.header { display:flex; align-items:center; justify-content:space-between; padding:10px 20px; border-bottom:1px solid var(--border); background:var(--bg-panel); gap:12px; flex-wrap:wrap; }
+.header-left { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.logo { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:14px; letter-spacing:-0.5px; display:flex; align-items:center; gap:8px; white-space:nowrap; }
+.logo-icon { width:26px; height:26px; background:var(--accent); border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff; }
+.version-tag { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); background:var(--bg-input); padding:2px 6px; border-radius:3px; border:1px solid var(--border); }
+.lan-info { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); cursor:pointer; padding:3px 8px; border-radius:4px; transition:all .15s; }
+.lan-info:hover { background:var(--bg-hover); color:var(--green); }
+.lan-info.has-lan { color:var(--green); }
+.divider-v { width:1px; height:22px; background:var(--border); }
+.conn-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.conn-bar select, .conn-bar input { font-family:'IBM Plex Mono',monospace; font-size:12px; padding:5px 8px; border-radius:5px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-primary); outline:none; }
+.conn-bar select:focus, .conn-bar input:focus { border-color:var(--border-focus); }
+.conn-bar select { min-width:160px; cursor:pointer; }
+.conn-bar input { width:80px; text-align:center; }
+.header-right { display:flex; align-items:center; gap:8px; }
+
+/* Buttons */
+.btn { font-family:'DM Sans',sans-serif; font-size:12px; font-weight:600; padding:6px 12px; border-radius:5px; border:1px solid var(--border); background:var(--bg-panel); color:var(--text-primary); cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.btn:hover { background:var(--bg-hover); border-color:var(--text-muted); }
+.btn-sm { padding:4px 8px; font-size:11px; }
+.btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn-primary:hover { background:#2d7ae0; }
+.btn-success { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+.btn-success:hover { background:rgba(52,211,153,.2); }
+.btn-danger { background:var(--red-dim); border-color:var(--red); color:var(--red); }
+.btn-danger:hover { background:rgba(248,113,113,.2); }
+.btn-warn { background:var(--amber-dim); border-color:var(--amber); color:var(--amber); }
+
+/* Status */
+.status-dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); transition:background .3s; flex-shrink:0; }
+.status-dot.connected { background:var(--green); box-shadow:0 0 8px rgba(52,211,153,.5); }
+.status-dot.reconnecting { background:var(--amber); animation:pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.status-text { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-secondary); white-space:nowrap; }
+
+/* Main */
+.main { display:grid; grid-template-columns:1fr 1fr; overflow:hidden; }
+.panel { display:flex; flex-direction:column; overflow:hidden; }
+.panel:first-child { border-right:1px solid var(--border); }
+.panel-header { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
+.panel-title { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; }
+.panel-actions { display:flex; align-items:center; gap:6px; }
+
+/* Editor */
+.editor-wrap { flex:1; position:relative; overflow:hidden; }
+.editor { width:100%; height:100%; padding:14px 16px; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.65; color:var(--text-primary); background:var(--bg-deep); border:none; outline:none; resize:none; tab-size:4; }
+.editor::placeholder { color:var(--text-muted); }
+.drop-overlay { display:none; position:absolute; inset:0; background:rgba(61,142,240,.08); border:2px dashed var(--accent); border-radius:8px; z-index:10; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--accent); }
+.drop-overlay.active { display:flex; }
+
+/* Options bar */
+.options-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; border-top:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; flex-wrap:wrap; gap:8px; }
+.options-left { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.option-group { display:flex; align-items:center; gap:5px; }
+.option-group label { font-size:11px; color:var(--text-secondary); font-family:'IBM Plex Mono',monospace; }
+.option-group input[type="number"] { font-family:'IBM Plex Mono',monospace; font-size:11px; width:55px; padding:3px 5px; border-radius:4px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-primary); outline:none; text-align:center; }
+.option-group input[type="text"] { font-family:'IBM Plex Mono',monospace; font-size:11px; width:120px; padding:3px 5px; border-radius:4px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-primary); outline:none; }
+.option-group select { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 5px; border-radius:4px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-primary); outline:none; cursor:pointer; }
+.toggle { position:relative; width:32px; height:16px; cursor:pointer; }
+.toggle input { display:none; }
+.toggle-track { position:absolute; inset:0; background:var(--bg-input); border:1px solid var(--border); border-radius:8px; transition:all .2s; }
+.toggle input:checked+.toggle-track { background:var(--accent); border-color:var(--accent); }
+.toggle-thumb { position:absolute; top:2px; left:2px; width:12px; height:12px; background:var(--text-secondary); border-radius:50%; transition:all .2s; pointer-events:none; }
+.toggle input:checked~.toggle-thumb { left:18px; background:#fff; }
+
+/* Terminal */
+.terminal-wrap { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+.terminal { flex:1; padding:14px 16px; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.65; color:var(--green); background:var(--bg-deep); overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+.terminal::-webkit-scrollbar { width:6px; }
+.terminal::-webkit-scrollbar-track { background:var(--bg-deep); }
+.terminal::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+/* ANSI color classes */
+.ansi-red { color:var(--red); }
+.ansi-green { color:var(--green); }
+.ansi-yellow { color:var(--amber); }
+.ansi-blue { color:var(--accent); }
+.ansi-bold { font-weight:600; }
+
+/* Hex display */
+.hex-line { display:flex; gap:0; line-height:1.5; }
+.hex-offset { color:var(--text-muted); min-width:7ch; }
+.hex-bytes { color:var(--accent); min-width:50ch; letter-spacing:0.5px; }
+.hex-ascii { color:var(--green); }
+.hex-nonprint { color:var(--text-muted); }
+.hex-highlight { color:var(--amber); }
+#hexToggle.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+/* Quick commands bar */
+.quick-bar { display:flex; align-items:center; gap:6px; padding:6px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; overflow-x:auto; }
+.quick-bar::-webkit-scrollbar { height:4px; }
+.quick-bar::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+/* Command input */
+.cmd-bar { display:flex; align-items:center; border-top:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
+.cmd-prompt { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--accent); padding:8px 0 8px 14px; user-select:none; }
+.cmd-input { flex:1; font-family:'IBM Plex Mono',monospace; font-size:13px; padding:8px 14px 8px 6px; border:none; outline:none; background:transparent; color:var(--text-primary); }
+.cmd-input::placeholder { color:var(--text-muted); }
+
+/* Toast */
+.toast-container { position:fixed; bottom:16px; right:16px; z-index:1000; display:flex; flex-direction:column; gap:6px; }
+.toast { font-family:'DM Sans',sans-serif; font-size:12px; font-weight:500; padding:8px 14px; border-radius:6px; border:1px solid; animation:toastIn .3s ease, toastOut .3s ease 2.7s forwards; max-width:300px; }
+.toast.success { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+.toast.error { background:var(--red-dim); border-color:var(--red); color:var(--red); }
+.toast.info { background:var(--accent-glow); border-color:var(--accent); color:var(--accent); }
+.toast.warning { background:var(--amber-dim); border-color:var(--amber); color:var(--amber); }
+@keyframes toastIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes toastOut { from{opacity:1} to{opacity:0} }
+
+/* Confirm modal */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
+.modal-overlay.active { display:flex; }
+.modal { background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; padding:24px; max-width:400px; width:90%; }
+.modal h3 { font-size:15px; margin-bottom:12px; }
+.modal p { font-size:13px; color:var(--text-secondary); margin-bottom:16px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+
+/* Advanced-only elements */
+.advanced-only { display:none; }
+body.mode-advanced .advanced-only { display:flex; }
+body.mode-advanced .simple-only { display:none; }
+
+/* Hidden */
+.hidden { display:none !important; }
+.hidden-upload { display:none; }
+
+/* Help panel */
+.help-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200; justify-content:flex-end; }
+.help-overlay.active { display:flex; }
+.help-panel { width:420px; max-width:90vw; height:100vh; background:var(--bg-panel); border-left:1px solid var(--border); overflow-y:auto; padding:0; animation:helpSlide .2s ease; }
+@keyframes helpSlide { from{transform:translateX(100%)} to{transform:translateX(0)} }
+.help-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg-panel); z-index:1; }
+.help-header h2 { font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; }
+.help-close { background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:4px; }
+.help-close:hover { background:var(--bg-hover); color:var(--text-primary); }
+.help-section { padding:16px 20px; border-bottom:1px solid var(--border); }
+.help-section h3 { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+.help-section h3::after { content:'▾'; font-size:10px; color:var(--text-muted); transition:transform .2s; }
+.help-section h3.collapsed::after { transform:rotate(-90deg); }
+.help-section .help-content { transition:max-height .2s; overflow:hidden; }
+.help-section .help-content.collapsed { max-height:0 !important; }
+.help-table { width:100%; border-collapse:collapse; }
+.help-table td { padding:5px 0; font-size:12px; vertical-align:top; }
+.help-table td:first-child { font-family:'IBM Plex Mono',monospace; color:var(--accent); white-space:nowrap; padding-right:12px; width:40%; }
+.help-table td:last-child { color:var(--text-secondary); }
+.help-tip { font-size:12px; color:var(--text-secondary); line-height:1.6; margin-bottom:8px; }
+.help-tip code { font-family:'IBM Plex Mono',monospace; background:var(--bg-input); padding:1px 5px; border-radius:3px; font-size:11px; color:var(--text-primary); }
+.help-badge { display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px; padding:1px 6px; border-radius:3px; margin-left:6px; }
+.help-badge.simple { background:var(--green-dim); color:var(--green); border:1px solid var(--green); }
+.help-badge.advanced { background:var(--accent-glow); color:var(--accent); border:1px solid var(--accent); }
+.help-version { padding:16px 20px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); }
+
+@media (max-width:900px) {
+  .main { grid-template-columns:1fr; grid-template-rows:1fr 1fr; }
+  .panel:first-child { border-right:none; border-bottom:1px solid var(--border); }
+}
+</style>
+</head>
+<body class="mode-simple">
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <span id="appName">tty</span>
+        <span class="version-tag" id="appVersion"></span>
+      </div>
+      <div class="divider-v"></div>
+
+      <!-- Profile selector (advanced) -->
+      <select id="profileSelect" class="advanced-only" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-primary);cursor:pointer;" onchange="switchProfile(this.value)">
+      </select>
+
+      <div class="conn-bar">
+        <select id="portSelect"><option value="">Select port...</option></select>
+        <input type="number" id="baudRate" value="115200" min="300" max="4000000" title="Baud rate">
+
+        <!-- Flow control (advanced) -->
+        <select id="flowControl" class="advanced-only" title="Flow control">
+          <option value="none">No flow</option>
+          <option value="rtscts">RTS/CTS</option>
+          <option value="xonxoff">XON/XOFF</option>
+          <option value="dsrdtr">DSR/DTR</option>
+        </select>
+
+        <button class="btn btn-success" id="connectBtn" onclick="toggleConnection()">
+          <span class="status-dot" id="statusDot"></span> Connect
+        </button>
+        <span class="status-text" id="statusText">Disconnected</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="lan-info" id="lanInfo" title="LAN access URL"></span>
+      <button class="btn btn-sm" onclick="refreshPorts()" title="Refresh ports">↻ Ports</button>
+      <button class="btn btn-sm" id="modeToggle" onclick="toggleMode()">⚙ Advanced</button>
+      <button class="btn btn-sm" onclick="toggleHelp()" title="Help & shortcuts">? Help</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Left: Editor -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Script Editor</span>
+        <div class="panel-actions">
+          <button class="btn btn-sm" onclick="uploadFile()">📂 Open</button>
+          <button class="btn btn-sm" onclick="clearEditor()">Clear</button>
+          <button class="btn btn-sm btn-primary" onclick="sendScript()">▶ Send & Run</button>
+        </div>
+      </div>
+      <div class="editor-wrap" id="editorWrap">
+        <textarea class="editor" id="scriptEditor" placeholder="#!/bin/bash&#10;&#10;# Paste or type your script here...&#10;# Or drag & drop a .sh file" spellcheck="false"></textarea>
+        <div class="drop-overlay" id="dropOverlay">Drop .sh file here</div>
+      </div>
+      <!-- Simple: just send button -->
+      <!-- Advanced: full options -->
+      <div class="options-bar advanced-only">
+        <div class="options-left">
+          <div class="option-group">
+            <label>Delay:</label>
+            <input type="number" id="lineDelay" value="50" min="0" max="1000" step="10">
+            <label>ms</label>
+          </div>
+          <div class="option-group">
+            <label>Path:</label>
+            <input type="text" id="remotePath" value="/tmp/script.sh">
+          </div>
+          <div class="option-group">
+            <label>Auto-run:</label>
+            <label class="toggle"><input type="checkbox" id="autoExecute" checked><span class="toggle-track"></span><span class="toggle-thumb"></span></label>
+          </div>
+          <div class="option-group">
+            <label>Dry-run:</label>
+            <label class="toggle"><input type="checkbox" id="dryRun"><span class="toggle-track"></span><span class="toggle-thumb"></span></label>
+          </div>
+          <div class="option-group">
+            <label>EOL:</label>
+            <select id="lineEnding">
+              <option value="auto">Auto</option>
+              <option value="lf">Force LF</option>
+              <option value="preserve">Preserve</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="sendScriptOnly()">Send Only</button>
+      </div>
+    </div>
+
+    <!-- Right: Terminal -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Serial Output</span>
+        <div class="panel-actions">
+          <button class="btn btn-sm" id="hexToggle" onclick="toggleHex()">HEX</button>
+          <button class="btn btn-sm advanced-only" onclick="showSessions()">⏮ Replay</button>
+          <button class="btn btn-sm" onclick="clearTerminal()">Clear</button>
+          <button class="btn btn-sm" onclick="copyTerminal()">Copy</button>
+        </div>
+      </div>
+      <!-- Quick commands bar (advanced) -->
+      <div class="quick-bar advanced-only" id="quickBar"></div>
+      <div class="terminal-wrap">
+        <div class="terminal" id="terminal"></div>
+        <div class="cmd-bar">
+          <span class="cmd-prompt">$</span>
+          <input class="cmd-input" id="cmdInput" placeholder="Type command, press Enter..." onkeydown="handleCmdKey(event)">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <h3 id="confirmTitle">Confirm</h3>
+    <p id="confirmMsg">Are you sure?</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeConfirm(false)">Cancel</button>
+      <button class="btn btn-danger" onclick="closeConfirm(true)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Help panel -->
+<div class="help-overlay" id="helpOverlay" onclick="if(event.target===this)toggleHelp()">
+  <div class="help-panel">
+    <div class="help-header">
+      <h2>⚡ Help</h2>
+      <button class="help-close" onclick="toggleHelp()">✕</button>
+    </div>
+
+    <!-- Getting Started -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Getting Started</h3>
+      <div class="help-content">
+        <p class="help-tip"><strong>1.</strong> Select your serial port and baud rate in the header bar.</p>
+        <p class="help-tip"><strong>2.</strong> Click <strong>Connect</strong>.</p>
+        <p class="help-tip"><strong>3.</strong> Paste or type your bash script in the editor (left panel), or drag & drop a <code>.sh</code> file.</p>
+        <p class="help-tip"><strong>4.</strong> Click <strong>▶ Send & Run</strong>.</p>
+        <p class="help-tip"><strong>5.</strong> Watch the output in the terminal (right panel).</p>
+        <p class="help-tip">You can also type single commands in the <code>$</code> bar at the bottom of the terminal.</p>
+      </div>
+    </div>
+
+    <!-- Keyboard Shortcuts -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Keyboard Shortcuts</h3>
+      <div class="help-content">
+        <table class="help-table">
+          <tr><td>Tab</td><td>Insert 4 spaces (in editor)</td></tr>
+          <tr><td>Enter</td><td>Send command (in command bar)</td></tr>
+          <tr><td>↑ / ↓</td><td>Browse command history</td></tr>
+          <tr><td>Ctrl+C</td><td>Copy selection / stop (in terminal)</td></tr>
+          <tr><td>Drag & Drop</td><td>Load .sh file into editor</td></tr>
+          <tr><td>Esc</td><td>Close this help panel</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Buttons Reference</h3>
+      <div class="help-content">
+        <table class="help-table">
+          <tr><td>▶ Send & Run</td><td>Transfer script to board and execute it</td></tr>
+          <tr><td>Send Only</td><td>Transfer without executing <span class="help-badge advanced">ADV</span></td></tr>
+          <tr><td>HEX</td><td>Toggle hex dump view in terminal</td></tr>
+          <tr><td>⚙ / ◉</td><td>Switch between Simple and Advanced mode</td></tr>
+          <tr><td>↻ Ports</td><td>Rescan serial ports</td></tr>
+          <tr><td>⏮ Replay</td><td>Browse & replay recorded sessions <span class="help-badge advanced">ADV</span></td></tr>
+          <tr><td>📂 Open</td><td>Load .sh file from disk</td></tr>
+          <tr><td>Clear</td><td>Clear editor or terminal content</td></tr>
+          <tr><td>Copy</td><td>Copy terminal output to clipboard</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Hex Display -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Hex Display</h3>
+      <div class="help-content">
+        <p class="help-tip">Click <strong>HEX</strong> to toggle hex dump view. Shows raw bytes like <code>hexdump -C</code>:</p>
+        <p class="help-tip" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-primary);background:var(--bg-deep);padding:8px;border-radius:4px;line-height:1.8;">
+          <span style="color:var(--text-muted)">00000000</span>&ensp;<span style="color:var(--accent)">68 65 6c 6c 6f 0a</span>&ensp;<span style="color:var(--green)">|hello·|</span>
+        </p>
+        <p class="help-tip">Colors: <span style="color:var(--text-muted)">offset</span> · <span style="color:var(--accent)">hex bytes</span> · <span style="color:var(--green)">printable ASCII</span> · <span style="color:var(--amber)">CR/LF</span> · <span style="color:var(--text-muted)">non-printable ·</span></p>
+        <p class="help-tip">Switching between text and hex preserves data (64KB buffer).</p>
+      </div>
+    </div>
+
+    <!-- Advanced Features -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Advanced Features <span class="help-badge advanced">ADV</span></h3>
+      <div class="help-content">
+        <table class="help-table">
+          <tr><td>Profiles</td><td>Save port/baud/commands per board. Switch from dropdown.</td></tr>
+          <tr><td>Quick Commands</td><td>Buttons above terminal for common tasks (disk, memory, etc.)</td></tr>
+          <tr><td>Line Delay</td><td>Milliseconds between lines. Increase if output garbled (try 100-200ms).</td></tr>
+          <tr><td>Remote Path</td><td>Where the script is saved on the board. Default: <code>/tmp/script.sh</code></td></tr>
+          <tr><td>Auto-run</td><td>Toggle whether script executes after transfer.</td></tr>
+          <tr><td>Dry-run</td><td>Sends script but skips execution. Good for testing.</td></tr>
+          <tr><td>EOL Mode</td><td>Auto (strip \\r), Force LF, or Preserve (for binary).</td></tr>
+          <tr><td>Flow Control</td><td>None, RTS/CTS, XON/XOFF, DSR/DTR. Match your board.</td></tr>
+          <tr><td>Session Replay</td><td>Browse and replay past sessions in the terminal.</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Connection -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Connection Status</h3>
+      <div class="help-content">
+        <table class="help-table">
+          <tr><td style="color:var(--green)">● Connected</td><td>Serial port open, ready to send.</td></tr>
+          <tr><td style="color:var(--amber)">● Reconnecting</td><td>Cable disconnected, retrying automatically.</td></tr>
+          <tr><td style="color:var(--text-muted)">● Disconnected</td><td>Not connected. Select port and click Connect.</td></tr>
+        </table>
+        <p class="help-tip">Auto-reconnect is enabled by default. If the USB cable is yanked, the app will retry every 3 seconds.</p>
+      </div>
+    </div>
+
+    <!-- Dangerous Commands -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Safety Guard</h3>
+      <div class="help-content">
+        <p class="help-tip">These commands trigger a confirmation prompt before executing:</p>
+        <p class="help-tip"><code>rm -rf /</code> · <code>mkfs</code> · <code>dd if=</code> · <code>shutdown</code> · <code>reboot</code> · <code>halt</code></p>
+        <p class="help-tip">Disable this in advanced Settings → Behavior → dangerous_cmd_guard.</p>
+      </div>
+    </div>
+
+    <!-- Mobile / LAN Access -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Mobile / LAN Access</h3>
+      <div class="help-content">
+        <p class="help-tip">The server binds to <code>0.0.0.0</code> by default, making it accessible from any device on the same network.</p>
+        <p class="help-tip"><strong>To use from your phone/tablet:</strong></p>
+        <p class="help-tip"><strong>1.</strong> Connect your phone to the same WiFi as this computer.</p>
+        <p class="help-tip"><strong>2.</strong> Open the LAN URL shown in the header (or scan the QR code printed in the terminal).</p>
+        <p class="help-tip"><strong>3.</strong> Use the full UI — send scripts, view output, run commands — all from your phone.</p>
+        <p class="help-tip" id="helpLanUrl"></p>
+        <p class="help-tip"><strong>Flags:</strong></p>
+        <table class="help-table">
+          <tr><td><code>--local</code></td><td>Restrict to localhost only (no LAN access)</td></tr>
+          <tr><td><code>--host IP</code></td><td>Bind to a specific interface</td></tr>
+          <tr><td><code>--port N</code></td><td>Change port (default: 8000)</td></tr>
+          <tr><td><code>--no-browser</code></td><td>Don't auto-open browser on start</td></tr>
+        </table>
+        <p class="help-tip"><strong>Supported:</strong> iOS Safari, Android Chrome, any modern browser. The UI is fully responsive.</p>
+      </div>
+    </div>
+
+    <!-- Troubleshooting -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Troubleshooting</h3>
+      <div class="help-content">
+        <p class="help-tip"><strong>No ports found?</strong><br>Check cable, install drivers (CH340, CP2102, FTDI). On Linux: <code>sudo usermod -aG dialout $USER</code> then re-login.</p>
+        <p class="help-tip"><strong>Garbled output?</strong><br>Verify baud rate matches the board. Increase line delay to 100-200ms. Check flow control and parity settings.</p>
+        <p class="help-tip"><strong>Script fails?</strong><br>Add <code>#!/bin/bash</code> shebang. Try Send Only, then run manually. Check path is writable.</p>
+        <p class="help-tip"><strong>Connection drops?</strong><br>Auto-reconnect should recover. Try a different cable (data, not charge-only) or USB port.</p>
+        <p class="help-tip"><strong>Windows: access denied?</strong><br>Close PuTTY or any other app using the same COM port.</p>
+      </div>
+    </div>
+
+    <!-- Common Baud Rates -->
+    <div class="help-section">
+      <h3 onclick="toggleSection(this)">Common Baud Rates</h3>
+      <div class="help-content">
+        <table class="help-table">
+          <tr><td>9600</td><td>Arduino default, slow devices</td></tr>
+          <tr><td>38400</td><td>Some embedded boards</td></tr>
+          <tr><td>115200</td><td>Most Linux boards (RPi, BeagleBone, STM32MP)</td></tr>
+          <tr><td>921600</td><td>ESP32, fast debug</td></tr>
+          <tr><td>1500000</td><td>High-speed SoCs</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div class="help-version" id="helpVersion">
+      ⚡ tty<br>
+      FastAPI + pyserial + WebSocket<br>
+      Linux · Windows · MSYS2 · Git Bash · WSL · macOS
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<input type="file" class="hidden-upload" id="fileUpload" accept=".sh,.bash,.txt" onchange="handleFileUpload(event)">
+
+<script>
+// ── State ──
+let ws = null;
+let isConnected = false;
+let currentMode = 'simple';
+let confirmResolve = null;
+let cmdHistory = [];
+let cmdHistoryIdx = -1;
+let hexMode = false;
+let rawBuffer = [];       // raw bytes for hex re-render
+let hexOffset = 0;        // running offset for hex display
+const MAX_TERMINAL_LINES = 10000;
+const MAX_RAW_BUFFER = 65536; // 64KB raw buffer
+
+// ── WebSocket ──
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    switch(msg.type) {
+      case 'output':
+        appendTerminal(msg.data);
+        break;
+      case 'status':
+        handleStatus(msg);
+        break;
+    }
+  };
+  ws.onclose = () => setTimeout(connectWS, 2000);
+}
+connectWS();
+
+// ── Status handler ──
+function handleStatus(msg) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  const btn = document.getElementById('connectBtn');
+  dot.className = 'status-dot';
+  switch(msg.state) {
+    case 'connected':
+      isConnected = true;
+      dot.classList.add('connected');
+      btn.className = 'btn btn-danger';
+      btn.innerHTML = '<span class="status-dot connected"></span> Disconnect';
+      txt.textContent = 'Connected';
+      if (msg.message) toast(msg.message, 'success');
+      break;
+    case 'reconnecting':
+      dot.classList.add('reconnecting');
+      txt.textContent = `Reconnecting${msg.retry ? ' #'+msg.retry : ''}...`;
+      break;
+    case 'disconnected':
+      isConnected = false;
+      btn.className = 'btn btn-success';
+      btn.innerHTML = '<span class="status-dot"></span> Connect';
+      txt.textContent = 'Disconnected';
+      if (msg.reason) toast(`Disconnected: ${msg.reason}`, 'warning');
+      break;
+  }
+  // Load mode from initial config
+  if (msg.config) {
+    if (msg.config.mode) setMode(msg.config.mode);
+  }
+}
+
+// ── Mode toggle ──
+function setMode(mode) {
+  currentMode = mode;
+  document.body.className = `mode-${mode}`;
+  const btn = document.getElementById('modeToggle');
+  btn.textContent = mode === 'simple' ? '⚙ Advanced' : '◉ Simple';
+  if (mode === 'advanced') {
+    loadQuickCommands();
+    loadProfiles();
+  }
+}
+
+function toggleMode() {
+  const newMode = currentMode === 'simple' ? 'advanced' : 'simple';
+  setMode(newMode);
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({mode: newMode})
+  });
+}
+
+// ── Ports ──
+async function refreshPorts() {
+  try {
+    const res = await fetch('/api/ports');
+    const ports = await res.json();
+    const sel = document.getElementById('portSelect');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Select port...</option>';
+    ports.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.device;
+      o.textContent = `${p.device} — ${p.description}`;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+    toast(`${ports.length} port(s) found`, 'info');
+  } catch(e) { toast('Failed to list ports', 'error'); }
+}
+refreshPorts();
+
+// ── Connect/Disconnect ──
+async function toggleConnection() {
+  if (isConnected) {
+    await fetch('/api/disconnect', {method:'POST'});
+    toast('Disconnected', 'info');
+  } else {
+    const port = document.getElementById('portSelect').value;
+    const baud = document.getElementById('baudRate').value;
+    if (!port) { toast('Select a port first', 'error'); return; }
+    const body = {port, baudrate: baud};
+    // Advanced: include flow control
+    if (currentMode === 'advanced') {
+      body.flow_control = document.getElementById('flowControl').value;
+    }
+    const res = await fetch('/api/connect', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.status === 'connected') toast(`Connected to ${data.port}`, 'success');
+    else toast(data.message, 'error');
+  }
+}
+
+// ── Send script ──
+async function sendScript() {
+  const script = document.getElementById('scriptEditor').value;
+  if (!script.trim()) { toast('Script is empty', 'error'); return; }
+  if (!isConnected) { toast('Connect first', 'error'); return; }
+  const body = {script, execute: true};
+  if (currentMode === 'advanced') {
+    body.line_delay = parseInt(document.getElementById('lineDelay').value) / 1000;
+    body.execute = document.getElementById('autoExecute').checked;
+    body.remote_path = document.getElementById('remotePath').value;
+  } else {
+    body.line_delay = 0.05;
+  }
+  toast('Sending...', 'info');
+  const res = await fetch('/api/send', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.status === 'ok') toast(data.message, 'success');
+  else toast(data.message, 'error');
+}
+
+async function sendScriptOnly() {
+  const script = document.getElementById('scriptEditor').value;
+  if (!script.trim()) { toast('Script is empty', 'error'); return; }
+  if (!isConnected) { toast('Connect first', 'error'); return; }
+  const body = {
+    script,
+    execute: false,
+    line_delay: parseInt(document.getElementById('lineDelay').value) / 1000,
+    remote_path: document.getElementById('remotePath').value,
+  };
+  const res = await fetch('/api/send', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.status === 'ok') toast(data.message, 'success');
+  else toast(data.message, 'error');
+}
+
+// ── Send command ──
+async function sendCommand() {
+  const input = document.getElementById('cmdInput');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  if (!isConnected) { toast('Not connected', 'error'); return; }
+  cmdHistory.unshift(cmd);
+  cmdHistoryIdx = -1;
+  const res = await fetch('/api/command', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command: cmd})
+  });
+  const data = await res.json();
+  if (data.status === 'warning' && data.dangerous) {
+    const ok = await showConfirm('Dangerous Command', `${data.message}\n\nProceed anyway?`);
+    if (ok) {
+      // Send with force flag — bypass guard by sending raw
+      await fetch('/api/command', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({command: cmd, force: true})
+      });
+    }
+  }
+  input.value = '';
+}
+
+function handleCmdKey(e) {
+  if (e.key === 'Enter') sendCommand();
+  else if (e.key === 'ArrowUp') {
+    if (cmdHistory.length > 0) {
+      cmdHistoryIdx = Math.min(cmdHistoryIdx + 1, cmdHistory.length - 1);
+      e.target.value = cmdHistory[cmdHistoryIdx];
+    }
+  } else if (e.key === 'ArrowDown') {
+    if (cmdHistoryIdx > 0) {
+      cmdHistoryIdx--;
+      e.target.value = cmdHistory[cmdHistoryIdx];
+    } else {
+      cmdHistoryIdx = -1;
+      e.target.value = '';
+    }
+  }
+}
+
+// ── Hex Display ──
+function toggleHex() {
+  hexMode = !hexMode;
+  const btn = document.getElementById('hexToggle');
+  btn.classList.toggle('active', hexMode);
+  // Re-render terminal from raw buffer
+  const term = document.getElementById('terminal');
+  term.innerHTML = '';
+  if (hexMode) {
+    hexOffset = 0;
+    renderHex(rawBuffer);
+  } else {
+    // Re-render as text
+    const text = rawBuffer.map(b => {
+      if (b >= 32 && b < 127) return String.fromCharCode(b);
+      if (b === 10) return '\n';
+      if (b === 13) return '';
+      if (b === 9) return '\t';
+      return '';
+    }).join('');
+    term.innerHTML = escapeHtml(text);
+  }
+  term.scrollTop = term.scrollHeight;
+}
+
+function renderHex(bytes) {
+  const term = document.getElementById('terminal');
+  let i = 0;
+  while (i < bytes.length) {
+    const chunk = bytes.slice(i, i + 16);
+    const offsetStr = hexOffset.toString(16).padStart(8, '0');
+
+    // Hex bytes
+    let hexParts = [];
+    for (let j = 0; j < 16; j++) {
+      if (j < chunk.length) {
+        hexParts.push(chunk[j].toString(16).padStart(2, '0'));
+      } else {
+        hexParts.push('  ');
+      }
+    }
+    const hexLeft = hexParts.slice(0, 8).join(' ');
+    const hexRight = hexParts.slice(8).join(' ');
+
+    // ASCII
+    let ascii = '';
+    for (let j = 0; j < chunk.length; j++) {
+      const b = chunk[j];
+      if (b >= 32 && b < 127) {
+        ascii += `<span class="hex-ascii">${escapeHtml(String.fromCharCode(b))}</span>`;
+      } else if (b === 0) {
+        ascii += '<span class="hex-nonprint">·</span>';
+      } else if (b === 10 || b === 13) {
+        ascii += '<span class="hex-highlight">·</span>';
+      } else {
+        ascii += '<span class="hex-nonprint">·</span>';
+      }
+    }
+
+    const line = `<div class="hex-line"><span class="hex-offset">${offsetStr}</span>  <span class="hex-bytes">${hexLeft}  ${hexRight}</span>  <span>|${ascii}|</span></div>`;
+    term.innerHTML += line;
+
+    hexOffset += chunk.length;
+    i += 16;
+  }
+}
+
+// ── Terminal ──
+function appendTerminal(text) {
+  const term = document.getElementById('terminal');
+
+  // Store raw bytes
+  const encoder = new TextEncoder();
+  const newBytes = Array.from(encoder.encode(text));
+  rawBuffer.push(...newBytes);
+  // Trim raw buffer if too large
+  if (rawBuffer.length > MAX_RAW_BUFFER) {
+    rawBuffer = rawBuffer.slice(-MAX_RAW_BUFFER);
+  }
+
+  if (hexMode) {
+    renderHex(newBytes);
+  } else {
+    // Basic ANSI color parsing
+    const html = escapeHtml(text)
+      .replace(/\x1b\[31m/g, '<span class="ansi-red">')
+      .replace(/\x1b\[32m/g, '<span class="ansi-green">')
+      .replace(/\x1b\[33m/g, '<span class="ansi-yellow">')
+      .replace(/\x1b\[34m/g, '<span class="ansi-blue">')
+      .replace(/\x1b\[1m/g, '<span class="ansi-bold">')
+      .replace(/\x1b\[0m/g, '</span>')
+      .replace(/\x1b\[\d+m/g, '');
+    term.innerHTML += html;
+    // Scrollback limit
+    const lines = term.innerHTML.split('\n');
+    if (lines.length > MAX_TERMINAL_LINES) {
+      term.innerHTML = lines.slice(-MAX_TERMINAL_LINES).join('\n');
+    }
+  }
+  term.scrollTop = term.scrollHeight;
+}
+
+function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function clearTerminal() { document.getElementById('terminal').innerHTML = ''; rawBuffer = []; hexOffset = 0; }
+function copyTerminal() { navigator.clipboard.writeText(document.getElementById('terminal').textContent); toast('Copied', 'success'); }
+
+// ── Editor ──
+function clearEditor() { document.getElementById('scriptEditor').value = ''; }
+function uploadFile() { document.getElementById('fileUpload').click(); }
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = (ev) => { document.getElementById('scriptEditor').value = ev.target.result; toast(`Loaded ${file.name}`, 'success'); };
+  r.readAsText(file);
+  e.target.value = '';
+}
+
+// Drag & drop
+const ew = document.getElementById('editorWrap');
+const dov = document.getElementById('dropOverlay');
+ew.addEventListener('dragover', (e) => { e.preventDefault(); dov.classList.add('active'); });
+ew.addEventListener('dragleave', () => dov.classList.remove('active'));
+ew.addEventListener('drop', (e) => {
+  e.preventDefault(); dov.classList.remove('active');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const r = new FileReader();
+    r.onload = (ev) => { document.getElementById('scriptEditor').value = ev.target.result; toast(`Loaded ${file.name}`, 'success'); };
+    r.readAsText(file);
+  }
+});
+
+// Tab key
+document.getElementById('scriptEditor').addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const ta = e.target, s = ta.selectionStart;
+    ta.value = ta.value.substring(0,s) + '    ' + ta.value.substring(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 4;
+  }
+});
+
+// ── Quick Commands ──
+async function loadQuickCommands() {
+  try {
+    const res = await fetch('/api/commands');
+    const cmds = await res.json();
+    const bar = document.getElementById('quickBar');
+    bar.innerHTML = '';
+    const top = ['board_info','disk','memory','uptime','ip_addr'];
+    top.forEach(name => {
+      if (cmds[name]) {
+        const b = document.createElement('button');
+        b.className = 'btn btn-sm';
+        b.textContent = name.replace(/_/g,' ');
+        b.title = cmds[name];
+        b.onclick = () => runQuickCmd(cmds[name]);
+        bar.appendChild(b);
+      }
+    });
+    // Custom commands dropdown
+    const others = Object.keys(cmds).filter(k => !top.includes(k));
+    if (others.length > 0) {
+      const sel = document.createElement('select');
+      sel.style.cssText = "font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-primary);cursor:pointer;";
+      sel.innerHTML = '<option value="">More...</option>';
+      others.forEach(name => {
+        const o = document.createElement('option');
+        o.value = cmds[name];
+        o.textContent = name.replace(/_/g,' ');
+        sel.appendChild(o);
+      });
+      sel.onchange = () => { if(sel.value) { runQuickCmd(sel.value); sel.value=''; } };
+      bar.appendChild(sel);
+    }
+  } catch(e) {}
+}
+
+async function runQuickCmd(cmd) {
+  if (!isConnected) { toast('Not connected', 'error'); return; }
+  const res = await fetch('/api/commands/run', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})
+  });
+  const data = await res.json();
+  if (data.status === 'warning') toast(data.message, 'warning');
+}
+
+// ── Profiles ──
+async function loadProfiles() {
+  try {
+    const res = await fetch('/api/profiles');
+    const data = await res.json();
+    const sel = document.getElementById('profileSelect');
+    sel.innerHTML = '';
+    Object.keys(data.profiles).forEach(name => {
+      const o = document.createElement('option');
+      o.value = name;
+      o.textContent = name + (name === data.active ? ' ●' : '');
+      o.selected = (name === data.active);
+      sel.appendChild(o);
+    });
+  } catch(e) {}
+}
+
+async function switchProfile(name) {
+  const res = await fetch('/api/profiles/switch', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name})
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    toast(`Profile: ${name}`, 'success');
+    if (data.connection) {
+      if (data.connection.port) document.getElementById('portSelect').value = data.connection.port;
+      if (data.connection.baudrate) document.getElementById('baudRate').value = data.connection.baudrate;
+      if (data.connection.flow_control) document.getElementById('flowControl').value = data.connection.flow_control;
+    }
+    loadProfiles();
+  } else {
+    toast(data.message, 'error');
+  }
+}
+
+// ── Sessions / Replay ──
+async function showSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    const sessions = await res.json();
+    if (!sessions.length) { toast('No sessions recorded yet', 'info'); return; }
+    const term = document.getElementById('terminal');
+    term.innerHTML = '<span class="ansi-yellow">═══ Session Replay ═══</span>\n\n';
+    sessions.forEach((s, i) => {
+      term.innerHTML += `<span class="ansi-blue">${i+1})</span> ${s.filename}  <span style="color:var(--text-muted)">(${s.lines} events)</span>\n`;
+    });
+    term.innerHTML += '\n<span class="ansi-yellow">Type session number in command bar to replay</span>\n';
+    // Temporarily override command handler
+    const input = document.getElementById('cmdInput');
+    input.placeholder = 'Session number...';
+    input.onkeydown = async (e) => {
+      if (e.key === 'Enter') {
+        const idx = parseInt(input.value) - 1;
+        input.value = '';
+        input.placeholder = 'Type command, press Enter...';
+        input.onkeydown = (ev) => handleCmdKey(ev);
+        if (idx >= 0 && idx < sessions.length) {
+          await replaySession(sessions[idx].id);
+        }
+      }
+    };
+  } catch(e) { toast('Failed to load sessions', 'error'); }
+}
+
+async function replaySession(id) {
+  try {
+    const res = await fetch(`/api/sessions/${id}`);
+    const data = await res.json();
+    if (!data.events) return;
+    const term = document.getElementById('terminal');
+    term.innerHTML = '<span class="ansi-yellow">═══ Replaying... ═══</span>\n\n';
+    for (const ev of data.events) {
+      if (ev.type === 'tx' || ev.type === 'command' || ev.type === 'script') {
+        term.innerHTML += `<span class="ansi-blue">${escapeHtml(ev.data || '')}</span>`;
+      } else if (ev.type === 'rx') {
+        term.innerHTML += escapeHtml(ev.data || '');
+      } else if (ev.type === 'connect' || ev.type === 'disconnect' || ev.type === 'reconnect') {
+        term.innerHTML += `<span class="ansi-yellow">[${ev.type}]</span>\n`;
+      }
+      term.scrollTop = term.scrollHeight;
+      await new Promise(r => setTimeout(r, 5));
+    }
+    term.innerHTML += '\n<span class="ansi-yellow">═══ Replay complete ═══</span>\n';
+  } catch(e) { toast('Replay failed', 'error'); }
+}
+
+// ── Confirm modal ──
+function showConfirm(title, msg) {
+  return new Promise(resolve => {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMsg').textContent = msg;
+    document.getElementById('confirmModal').classList.add('active');
+    confirmResolve = resolve;
+  });
+}
+
+function closeConfirm(result) {
+  document.getElementById('confirmModal').classList.remove('active');
+  if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
+}
+
+// ── Toast ──
+function toast(msg, type='info') {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── Help panel ──
+function toggleHelp() {
+  document.getElementById('helpOverlay').classList.toggle('active');
+}
+
+function toggleSection(el) {
+  el.classList.toggle('collapsed');
+  const content = el.nextElementSibling;
+  if (content) content.classList.toggle('collapsed');
+}
+
+// Esc key closes help
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const help = document.getElementById('helpOverlay');
+    if (help.classList.contains('active')) toggleHelp();
+    const modal = document.getElementById('confirmModal');
+    if (modal.classList.contains('active')) closeConfirm(false);
+  }
+});
+
+// ── State: App info ──
+let appInfo = { app_name: 'tty', app_version: '', app_tag: '' };
+
+// ── Init: load config + version ──
+async function init() {
+  // Fetch app info (name, version, environment, LAN)
+  try {
+    const infoRes = await fetch('/api/info');
+    appInfo = await infoRes.json();
+    // Set version everywhere
+    document.title = `${appInfo.app_tag || '⚡ tty'}`;
+    document.getElementById('appName').textContent = appInfo.app_name || 'tty';
+    document.getElementById('appVersion').textContent = appInfo.app_version ? `v${appInfo.app_version}` : '';
+    document.getElementById('helpVersion').innerHTML =
+      `⚡ ${appInfo.app_name} v${appInfo.app_version}<br>` +
+      `FastAPI + pyserial + WebSocket<br>` +
+      `Linux · Windows · MSYS2 · Git Bash · WSL · macOS`;
+    // LAN info
+    const lanEl = document.getElementById('lanInfo');
+    const helpLan = document.getElementById('helpLanUrl');
+    if (appInfo.lan_ip && appInfo.lan_ip !== '127.0.0.1') {
+      const lanUrl = `http://${appInfo.lan_ip}:${appInfo.port || 8000}`;
+      lanEl.textContent = `📱 ${lanUrl}`;
+      lanEl.title = `LAN access — click to copy`;
+      lanEl.classList.add('has-lan');
+      lanEl.onclick = () => { navigator.clipboard.writeText(lanUrl); toast('LAN URL copied', 'success'); };
+      if (helpLan) helpLan.innerHTML = `Current LAN URL: <code>${lanUrl}</code>`;
+    } else {
+      lanEl.textContent = '';
+      if (helpLan) helpLan.innerHTML = 'LAN access not available (running in localhost mode or no network).';
+    }
+  } catch(e) {}
+
+  // Fetch config
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    if (cfg.mode) setMode(cfg.mode);
+    if (cfg.connection) {
+      if (cfg.connection.baudrate) document.getElementById('baudRate').value = cfg.connection.baudrate;
+      if (cfg.connection.line_delay_ms) document.getElementById('lineDelay').value = cfg.connection.line_delay_ms;
+      if (cfg.connection.line_ending) document.getElementById('lineEnding').value = cfg.connection.line_ending;
+      if (cfg.connection.flow_control) document.getElementById('flowControl').value = cfg.connection.flow_control;
+    }
+    if (cfg.paths && cfg.paths.remote_script_path) {
+      document.getElementById('remotePath').value = cfg.paths.remote_script_path;
+    }
+    if (cfg.behavior) {
+      document.getElementById('autoExecute').checked = cfg.behavior.auto_execute !== false;
+      document.getElementById('dryRun').checked = cfg.behavior.dry_run === true;
+    }
+    if (cfg.last_session && cfg.last_session.last_script) {
+      document.getElementById('scriptEditor').value = cfg.last_session.last_script;
+    }
+  } catch(e) {}
+}
+init();
+</script>
+</body>
+</html>
