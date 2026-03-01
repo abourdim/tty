@@ -36,7 +36,7 @@ All version info lives in one place:
 ```python
 # version.py
 APP_NAME = "tty"
-APP_VERSION = "1.1"
+APP_VERSION = "1.3"
 APP_ICON = "⚡"
 ```
 
@@ -190,7 +190,7 @@ Interactive menu with auto-checks. Reads app name and version from `version.py`:
 
 ```
 ╔══════════════════════════════════════════╗
-║   ⚡ tty v1.1                            ║
+║   ⚡ tty v1.3                            ║
 ║   Profile: raspberrypi                   ║
 ║   Environment: linux                     ║
 ║   Python: 3.12.3 ✓                       ║

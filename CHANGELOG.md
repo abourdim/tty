@@ -4,6 +4,33 @@ All notable changes. Version is defined in `version.py`.
 
 ---
 
+## [1.3] — 2026-02-22
+
+### 🎨 Color Escape Fix
+
+**Fixed**
+- Raw `\033[1m` escape codes showing instead of actual colors. Root cause: bash `"\033"` in double quotes is literal text (5 chars: `\`, `0`, `3`, `3`), not an escape byte. Switched all color variables to `$'\033[...]'` syntax which produces real escape bytes.
+- Box drawing `print_box_line()` now ANSI-aware: strips escape codes before measuring visible width, then pads correctly so the right `║` border always aligns.
+- All `printf` and `echo` calls now work correctly with colored content.
+
+---
+
+## [1.2] — 2026-02-22
+
+### 🐛 launch.sh Crash Fix
+
+**Fixed**
+- Removed `set -euo pipefail` — was silently killing the script on first non-zero return (e.g. `tput`, `grep` miss, empty array). Interactive menu scripts need graceful failure handling.
+- Fixed `((x++))` arithmetic returning exit code 1 when value is 0 — replaced with safe `x=$((x + 1))`
+- Fixed `grep -oP` (Perl regex) — not available on macOS. Replaced with portable `sed`
+- Fixed `sed -i` without `''` suffix — now falls back to macOS syntax
+- Fixed CRLF self-fix operator precedence (`||` and `&&` chaining)
+- Fixed `first_run()` crashing when Python not found (now creates minimal JSON config)
+- Added `clear 2>/dev/null || true` guard (clear fails in some terminals)
+- Added `--debug` flag: `bash launch.sh --debug` for `set -x` trace output
+
+---
+
 ## [1.1] — 2026-02-22
 
 ### 📱 LAN & Mobile Access

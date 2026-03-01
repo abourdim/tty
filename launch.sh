@@ -5,11 +5,20 @@
 # Works on: Linux, MSYS2 UCRT64, Git Bash, WSL, macOS
 # ══════════════════════════════════════════════════
 
-set -euo pipefail
+# NOTE: Do NOT use set -e / pipefail here. This is an interactive menu
+# script where non-zero returns are normal (grep misses, user cancels, etc).
+
+# Debug mode: bash launch.sh --debug
+if [[ "${1:-}" == "--debug" ]]; then
+    set -x
+    shift
+fi
 
 # --- Self-fix line endings ---
-if head -1 "$0" | grep -q $'\r'; then
-    sed -i 's/\r$//' "$0" 2>/dev/null || tr -d '\r' < "$0" > "$0.tmp" && mv "$0.tmp" "$0"
+if head -1 "$0" 2>/dev/null | grep -q $'\r' 2>/dev/null; then
+    if ! sed -i 's/\r$//' "$0" 2>/dev/null; then
+        tr -d '\r' < "$0" > "$0.tmp" && mv "$0.tmp" "$0"
+    fi
     echo "Fixed line endings in launch.sh. Please re-run."
     exit 0
 fi
@@ -26,13 +35,24 @@ VERSION_FILE="$SCRIPT_DIR/version.py"
 
 # ── App identity (read from version.py) ──
 APP_NAME="tty"
-APP_VERSION="0.0.0"
+APP_VERSION="0.0"
 APP_ICON="⚡"
 read_version() {
     if [[ -f "$VERSION_FILE" ]]; then
-        APP_NAME=$(grep 'APP_NAME' "$VERSION_FILE" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-        APP_VERSION=$(grep 'APP_VERSION' "$VERSION_FILE" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-        APP_ICON=$(grep 'APP_ICON' "$VERSION_FILE" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+        local line=""
+        # Read each var separately — avoids pipeline/SIGPIPE issues
+        line=$(grep '^APP_NAME' "$VERSION_FILE" 2>/dev/null | head -1) || true
+        if [[ -n "$line" ]]; then
+            APP_NAME=$(echo "$line" | sed 's/.*= *"\(.*\)"/\1/')
+        fi
+        line=$(grep '^APP_VERSION' "$VERSION_FILE" 2>/dev/null | head -1) || true
+        if [[ -n "$line" ]]; then
+            APP_VERSION=$(echo "$line" | sed 's/.*= *"\(.*\)"/\1/')
+        fi
+        line=$(grep '^APP_ICON' "$VERSION_FILE" 2>/dev/null | head -1) || true
+        if [[ -n "$line" ]]; then
+            APP_ICON=$(echo "$line" | sed 's/.*= *"\(.*\)"/\1/')
+        fi
     fi
 }
 read_version
@@ -60,16 +80,16 @@ COLOR_SUPPORT=true
 setup_colors() {
     if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
         COLOR_SUPPORT=true
-        C_RESET="\033[0m"
-        C_BOLD="\033[1m"
-        C_DIM="\033[2m"
-        C_RED="\033[31m"
-        C_GREEN="\033[32m"
-        C_YELLOW="\033[33m"
-        C_BLUE="\033[34m"
-        C_CYAN="\033[36m"
-        C_WHITE="\033[97m"
-        C_BG_BLUE="\033[44m"
+        C_RESET=$'\033[0m'
+        C_BOLD=$'\033[1m'
+        C_DIM=$'\033[2m'
+        C_RED=$'\033[31m'
+        C_GREEN=$'\033[32m'
+        C_YELLOW=$'\033[33m'
+        C_BLUE=$'\033[34m'
+        C_CYAN=$'\033[36m'
+        C_WHITE=$'\033[97m'
+        C_BG_BLUE=$'\033[44m'
         C_TICK="${C_GREEN}✓${C_RESET}"
         C_CROSS="${C_RED}✗${C_RESET}"
         C_WARN="${C_YELLOW}⚠${C_RESET}"
@@ -97,12 +117,26 @@ log() {
 }
 
 # ── Helpers ──
-print_line() { printf "${C_DIM}%-40s${C_RESET}\n" "────────────────────────────────────────"; }
-print_box_top() { printf "${C_DIM}╔══════════════════════════════════════════╗${C_RESET}\n"; }
-print_box_mid() { printf "${C_DIM}╠══════════════════════════════════════════╣${C_RESET}\n"; }
-print_box_bot() { printf "${C_DIM}╚══════════════════════════════════════════╝${C_RESET}\n"; }
-print_box_line() { printf "${C_DIM}║${C_RESET} %-40s ${C_DIM}║${C_RESET}\n" "$1"; }
-print_box_empty() { printf "${C_DIM}║${C_RESET} %-40s ${C_DIM}║${C_RESET}\n" ""; }
+# Strip ANSI escapes for visible length calculation
+strip_ansi() { echo "$1" | sed 's/\x1b\[[0-9;]*m//g'; }
+
+print_line() { printf '%s\n' "${C_DIM}────────────────────────────────────────${C_RESET}"; }
+print_box_top() { printf '%s\n' "${C_DIM}╔══════════════════════════════════════════╗${C_RESET}"; }
+print_box_mid() { printf '%s\n' "${C_DIM}╠══════════════════════════════════════════╣${C_RESET}"; }
+print_box_bot() { printf '%s\n' "${C_DIM}╚══════════════════════════════════════════╝${C_RESET}"; }
+print_box_empty() { printf '%s\n' "${C_DIM}║${C_RESET}                                          ${C_DIM}║${C_RESET}"; }
+
+print_box_line() {
+    local content="$1"
+    local visible
+    visible=$(strip_ansi "$content")
+    local vlen=${#visible}
+    local pad=$((40 - vlen))
+    if [[ $pad -lt 0 ]]; then pad=0; fi
+    local spaces=""
+    for ((s=0; s<pad; s++)); do spaces+=" "; done
+    printf '%s\n' "${C_DIM}║${C_RESET} ${content}${spaces} ${C_DIM}║${C_RESET}"
+}
 
 pause() {
     echo ""
@@ -148,8 +182,9 @@ detect_python() {
     local candidates=("python3" "python" "python3.12" "python3.11" "python3.10")
     for cmd in "${candidates[@]}"; do
         if command -v "$cmd" &>/dev/null; then
-            local ver
-            ver="$($cmd --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)"
+            local ver=""
+            # Portable version extraction (no grep -P, works on macOS)
+            ver=$($cmd --version 2>&1 | sed -n 's/.*Python \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -1)
             if [[ -n "$ver" ]]; then
                 local major minor
                 major="${ver%%.*}"
@@ -190,7 +225,7 @@ check_dependencies() {
     local imports=("fastapi" "uvicorn" "serial" "multipart")
     for mod in "${imports[@]}"; do
         if $PYTHON_CMD -c "import $mod" &>/dev/null 2>&1; then
-            ((DEPS_INSTALLED++))
+            DEPS_INSTALLED=$((DEPS_INSTALLED + 1))
         fi
     done
     log "INFO" "Dependencies: $DEPS_INSTALLED/$DEPS_TOTAL installed"
@@ -205,7 +240,7 @@ scan_serial_ports() {
         while IFS= read -r line; do
             if [[ -n "$line" ]]; then
                 SERIAL_PORTS+=("$line")
-                ((PORTS_FOUND++))
+                PORTS_FOUND=$((PORTS_FOUND + 1))
             fi
         done < <($PYTHON_CMD -c "
 import serial.tools.list_ports
@@ -223,7 +258,7 @@ for p in serial.tools.list_ports.comports():
                 done
                 if ! $already; then
                     SERIAL_PORTS+=("$dev|$dev")
-                    ((PORTS_FOUND++))
+                    PORTS_FOUND=$((PORTS_FOUND + 1))
                 fi
             fi
         done
@@ -818,7 +853,7 @@ menu_manage_commands() {
         while IFS='=' read -r name cmd_val; do
             [[ -z "$name" || "$name" == \#* ]] && continue
             echo -e "    ${C_BOLD}${i}${C_RESET}) ${C_CYAN}${name}${C_RESET} = ${C_DIM}${cmd_val}${C_RESET}"
-            ((i++))
+            i=$((i + 1))
         done < "$COMMANDS_FILE"
     else
         echo -e "  ${C_DIM}No saved commands yet.${C_RESET}"
@@ -843,7 +878,12 @@ menu_manage_commands() {
         d|D)
             read -rp "  Name to delete: " name
             if [[ -f "$COMMANDS_FILE" ]]; then
-                sed -i "/^${name}=/d" "$COMMANDS_FILE"
+                # macOS sed -i needs '' suffix, GNU doesn't
+                if sed -i "/^${name}=/d" "$COMMANDS_FILE" 2>/dev/null; then
+                    true
+                else
+                    sed -i '' "/^${name}=/d" "$COMMANDS_FILE" 2>/dev/null || true
+                fi
                 echo -e "  ${C_TICK} Deleted"
                 log "INFO" "Command deleted: $name"
             fi
@@ -1340,7 +1380,7 @@ menu_logs() {
 # ── FIRST RUN ──
 # ════════════════════════════════════════════
 first_run() {
-    clear
+    clear 2>/dev/null || true
     echo ""
     echo -e "  ${C_BOLT} ${C_BOLD}Welcome to ${APP_NAME} v${APP_VERSION}!${C_RESET}"
     echo ""
@@ -1356,8 +1396,9 @@ first_run() {
     esac
 
     # Create default config
-    mkdir -p "$LOG_DIR"
-    $PYTHON_CMD -c "
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    if [[ -n "$PYTHON_CMD" ]]; then
+        $PYTHON_CMD -c "
 import json
 config = {
     'mode': '$CURRENT_MODE',
@@ -1418,7 +1459,11 @@ config = {
 }
 with open('$CONFIG_FILE', 'w') as f:
     json.dump(config, f, indent=2)
-" 2>/dev/null
+" 2>/dev/null || echo -e "  ${C_WARN} Could not create config (Python issue)"
+    else
+        # Minimal config without Python
+        echo '{"mode":"'"$CURRENT_MODE"'","active_profile":"default"}' > "$CONFIG_FILE" 2>/dev/null || true
+    fi
 
     save_mode
     log "INFO" "First run completed. Mode: $CURRENT_MODE"
